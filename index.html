@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>task.tracker — CS Student Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+/* ── RESET & BASE ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+:root{
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Manrope',sans-serif;
+  --bg:#0d0f12;
+  --bg2:#141720;
+  --bg3:#1c2030;
+  --surface:#1e2235;
+  --surface2:#252a40;
+  --border:#2a3050;
+  --border2:#3a4060;
+  --text:#e8eaf2;
+  --text2:#8b90a8;
+  --text3:#555a75;
+  --accent:#4f8ef7;
+  --accent-dim:#1a2d52;
+  --green:#2dd4a0;
+  --green-dim:#0d3328;
+  --amber:#f5a623;
+  --amber-dim:#3d2a09;
+  --red:#f06060;
+  --red-dim:#3d1515;
+  --purple:#a78bfa;
+  --purple-dim:#2d2050;
+  --teal:#22d3ee;
+  --teal-dim:#093040;
+  --radius:12px;
+  --radius-sm:8px;
+  --radius-xs:5px;
+  --shadow:0 4px 24px rgba(0,0,0,.4);
+}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased}
+
+/* ── LAYOUT ── */
+.app{display:grid;grid-template-rows:auto 1fr;min-height:100vh}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 1.25rem;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:50;gap:12px}
+.logo{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text);letter-spacing:-0.5px;white-space:nowrap}
+.logo span{color:var(--accent)}
+.topbar-center{flex:1;display:flex;justify-content:center}
+.live-clock{font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap}
+.topbar-right{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.sync-label{font-family:var(--mono);font-size:10px;color:var(--green)}
+.main-layout{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px)}
+@media(max-width:768px){.main-layout{grid-template-columns:1fr}.sidebar{display:none}.mobile-tabs{display:flex!important}}
+
+/* ── SIDEBAR ── */
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:1.25rem 0;display:flex;flex-direction:column;gap:4px;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 1.25rem;font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;border-right:2px solid transparent;border-radius:0}
+.nav-item:hover{background:var(--surface);color:var(--text)}
+.nav-item.active{background:var(--surface);color:var(--accent);border-right-color:var(--accent)}
+.nav-icon{font-size:14px;width:18px;text-align:center}
+.nav-section{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:1px;padding:1rem 1.25rem .4rem;text-transform:uppercase}
+.sidebar-footer{margin-top:auto;padding:1rem 1.25rem;border-top:1px solid var(--border)}
+.sidebar-stat{font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:4px}
+.sidebar-stat span{color:var(--text2);font-weight:600}
+
+/* ── MOBILE TABS ── */
+.mobile-tabs{display:none;background:var(--bg2);border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.mobile-tabs::-webkit-scrollbar{display:none}
+.mobile-tab{flex-shrink:0;padding:10px 16px;font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;background:none;border-top:none;border-left:none;border-right:none}
+.mobile-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ── CONTENT ── */
+.content{padding:1.5rem;overflow-y:auto}
+.page{display:none}.page.active{display:block}
+.page-header{margin-bottom:1.5rem}
+.page-title{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--text);letter-spacing:-0.5px}
+.page-sub{font-size:12px;color:var(--text3);margin-top:4px}
+
+/* ── BUTTONS ── */
+.btn{font-family:var(--mono);font-size:12px;font-weight:600;padding:8px 16px;border-radius:var(--radius-xs);border:1px solid var(--border2);background:var(--surface);color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:hover{background:var(--surface2);border-color:var(--border2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#3a7ae0}
+.btn.danger{color:var(--red);border-color:var(--red-dim)}
+.btn.danger:hover{background:var(--red-dim)}
+.btn.sm{font-size:10px;padding:5px 10px}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text2)}
+.btn.ghost:hover{background:var(--surface);color:var(--text)}
+
+/* ── TASK FILTERS ── */
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:1.25rem}
+.chip{font-family:var(--mono);font-size:10px;font-weight:600;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s}
+.chip:hover{border-color:var(--border2);color:var(--text)}
+.chip.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+
+/* ── TASK CARDS ── */
+.task-list{display:flex;flex-direction:column;gap:10px}
+.task-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:border-color .15s,transform .1s}
+.task-card:hover{border-color:var(--border2)}
+.task-card.overdue{border-color:rgba(240,96,96,.4)}
+.task-card.completed{opacity:.55}
+.task-header{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.cat-stripe{width:3px;height:36px;border-radius:2px;flex-shrink:0}
+.task-info{flex:1;min-width:0}
+.task-name{font-family:var(--sans);font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-name.struck{text-decoration:line-through;color:var(--text3)}
+.task-meta{display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap}
+.tag{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 6px;border-radius:3px}
+.dl-chip{font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 7px;border-radius:4px}
+.dl-ok{background:#0d3328;color:#2dd4a0}
+.dl-warn{background:#3d2a09;color:#f5a623}
+.dl-crit{background:#3d1515;color:#f06060}
+.dl-over{background:#3d1515;color:#f06060;animation:blink 1.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+.dl-done{background:var(--surface2);color:var(--text3)}
+.prog-mini{flex:1;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin:0 8px;min-width:40px}
+.prog-mini-fill{height:3px;border-radius:2px;transition:width .4s}
+.prog-pct{font-family:var(--mono);font-size:10px;color:var(--text2);width:30px;text-align:right;flex-shrink:0}
+.expand-arrow{color:var(--text3);font-size:12px;transition:transform .2s;flex-shrink:0}
+.expand-arrow.open{transform:rotate(180deg)}
+
+/* ── TASK BODY ── */
+.task-body{display:none;border-top:1px solid var(--border);padding:14px}
+.task-body.open{display:block}
+.metrics-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.metric{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.metric span{color:var(--text);font-weight:600}
+.desc-text{font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6}
+.tags-row{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}
+.hashtag{font-family:var(--mono);font-size:10px;padding:2px 7px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text3)}
+
+/* progress slider */
+.slider-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.slider-label{font-family:var(--mono);font-size:11px;color:var(--text2);width:36px;text-align:right;flex-shrink:0}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--bg)}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--bg)}
+
+/* log table */
+.log-section{margin-bottom:10px}
+.log-head{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
+.log-scroll{max-height:130px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--bg3)}
+.log-row{display:flex;gap:10px;align-items:baseline;padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px}
+.log-row:last-child{border:none}
+.log-ts{font-family:var(--mono);font-size:9px;color:var(--text3);white-space:nowrap;flex-shrink:0}
+.log-pct{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text);width:32px;flex-shrink:0}
+.log-delta{font-family:var(--mono);font-size:9px;width:28px;flex-shrink:0}
+.log-note{color:var(--text2);flex:1;font-size:11px;font-style:italic}
+.note-input-row{display:flex;gap:6px;margin-top:8px}
+.note-input-row input{flex:1;font-family:var(--sans);font-size:12px;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-xs);color:var(--text);outline:none}
+.note-input-row input:focus{border-color:var(--accent)}
+.action-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+
+/* ── STATS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:1.5rem}
+@media(min-width:600px){.stats-grid{grid-template-columns:repeat(4,1fr)}}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;text-align:center}
+.stat-val{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--text)}
+.stat-lbl{font-size:11px;color:var(--text3);margin-top:4px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1rem}
+.chart-title{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.5px;margin-bottom:1rem}
+.vel-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.vel-name{font-size:12px;color:var(--text2);width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.vel-track{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.vel-fill{height:6px;border-radius:3px;transition:width .5s}
+.vel-val{font-family:var(--mono);font-size:10px;color:var(--text2);width:44px;text-align:right;flex-shrink:0}
+
+/* ── JSON EXPORT PAGE ── */
+.schema-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1rem;overflow:hidden}
+.json-pre{font-family:var(--mono);font-size:11px;color:#9fafcf;line-height:1.7;overflow-x:auto;max-height:320px;overflow-y:auto;white-space:pre}
+.json-key{color:#7dd3fc}
+.json-str{color:#86efac}
+.json-num{color:#fbbf24}
+.json-bool{color:#f472b6}
+.schema-table{width:100%;border-collapse:collapse;font-size:12px}
+.schema-table th{font-family:var(--mono);font-size:9px;color:var(--text3);text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);letter-spacing:.5px;text-transform:uppercase}
+.schema-table td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text2)}
+.schema-table td:first-child{font-family:var(--mono);font-size:11px;color:var(--accent)}
+.schema-table td:nth-child(2){font-family:var(--mono);font-size:10px;color:var(--amber)}
+.schema-table tr:last-child td{border:none}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:200;padding:1rem;backdrop-filter:blur(4px)}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:1.5rem;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)}
+.modal-title{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text);margin-bottom:1.25rem}
+.field{margin-bottom:1rem}
+.field label{display:block;font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;font-family:var(--sans);font-size:13px;padding:9px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-xs);color:var(--text);outline:none;transition:border-color .15s}
+.field input:focus,.field select,.field textarea:focus{border-color:var(--accent)}
+.field select{cursor:pointer}
+.field textarea{min-height:70px;resize:vertical}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:1.25rem}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--text);box-shadow:var(--shadow);z-index:999;transform:translateY(80px);opacity:0;transition:all .3s}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+
+/* ── EMPTY ── */
+.empty-state{text-align:center;padding:3rem 1rem}
+.empty-icon{font-size:32px;margin-bottom:.75rem}
+.empty-title{font-family:var(--mono);font-size:14px;color:var(--text2);margin-bottom:.4rem}
+.empty-sub{font-size:12px;color:var(--text3)}
+
+/* ── LOADING ── */
+.loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;flex-direction:column;gap:12px}
+.loading-logo{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--text)}
+.loading-logo span{color:var(--accent)}
+.loading-bar{width:200px;height:2px;background:var(--surface2);border-radius:1px;overflow:hidden}
+.loading-fill{height:2px;background:var(--accent);border-radius:1px;animation:load 1.5s ease infinite}
+@keyframes load{0%{width:0;margin-left:0}50%{width:100%;margin-left:0}100%{width:0;margin-left:100%}}
+.loading-sub{font-family:var(--mono);font-size:10px;color:var(--text3)}
+
+/* ── CONFIG BANNER ── */
+.config-banner{background:var(--amber-dim);border:1px solid var(--amber);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.5rem;display:none}
+.config-banner.show{display:block}
+.config-title{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--amber);margin-bottom:.4rem}
+.config-sub{font-size:12px;color:var(--text2);line-height:1.6}
+.config-sub code{font-family:var(--mono);font-size:11px;background:var(--surface2);padding:1px 5px;border-radius:3px;color:var(--accent)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:480px){
+  .content{padding:1rem}
+  .topbar{padding:0 1rem}
+  .task-header{padding:10px}
+  .task-body{padding:10px}
+  .stats-grid{gap:8px}
+  .metrics-row{gap:10px}
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING SCREEN -->
+<div class="loading-screen" id="loading-screen">
+  <div class="loading-logo">task<span>.tracker</span></div>
+  <div class="loading-bar"><div class="loading-fill"></div></div>
+  <div class="loading-sub" id="loading-sub">connecting to firebase...</div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- APP -->
+<div class="app" id="app" style="display:none">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="logo">task<span>.tracker</span></div>
+    <div class="topbar-center">
+      <div class="live-clock" id="clock"></div>
+    </div>
+    <div class="topbar-right">
+      <div class="sync-dot" id="sync-dot" style="background:var(--text3)"></div>
+      <div class="sync-label" id="sync-label" style="color:var(--text3)">offline</div>
+      <button class="btn sm primary" onclick="openModal()">+ task</button>
+    </div>
+  </div>
+
+  <div class="main-layout">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="nav-section">navigation</div>
+      <div class="nav-item active" onclick="showPage('tasks',this)"><span class="nav-icon">▤</span>tasks</div>
+      <div class="nav-item" onclick="showPage('insights',this)"><span class="nav-icon">◈</span>insights</div>
+      <div class="nav-item" onclick="showPage('schema',this)"><span class="nav-icon">{ }</span>data schema</div>
+
+      <div class="nav-section">filter</div>
+      <div class="nav-item" onclick="setFilter('all');highlightNav(this)"><span class="nav-icon">◉</span>all tasks</div>
+      <div class="nav-item" onclick="setFilter('active');highlightNav(this)"><span class="nav-icon">▶</span>active</div>
+      <div class="nav-item" onclick="setFilter('overdue');highlightNav(this)"><span class="nav-icon">⚑</span>overdue</div>
+      <div class="nav-item" onclick="setFilter('completed');highlightNav(this)"><span class="nav-icon">✓</span>completed</div>
+
+      <div class="nav-section">category</div>
+      <div class="nav-item" onclick="setFilter('assignment');highlightNav(this)"><span class="nav-icon" style="color:#4f8ef7">●</span>assignments</div>
+      <div class="nav-item" onclick="setFilter('project');highlightNav(this)"><span class="nav-icon" style="color:#2dd4a0">●</span>projects</div>
+      <div class="nav-item" onclick="setFilter('study');highlightNav(this)"><span class="nav-icon" style="color:#f5a623">●</span>study</div>
+      <div class="nav-item" onclick="setFilter('research');highlightNav(this)"><span class="nav-icon" style="color:#a78bfa">●</span>research</div>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-stat">tasks: <span id="sb-total">0</span></div>
+        <div class="sidebar-stat">active: <span id="sb-active">0</span></div>
+        <div class="sidebar-stat">overdue: <span id="sb-overdue" style="color:var(--red)">0</span></div>
+        <div style="margin-top:10px">
+          <button class="btn sm" style="width:100%" onclick="exportJSON()">export JSON ↓</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOBILE TABS -->
+    <div class="mobile-tabs" id="mobile-tabs">
+      <button class="mobile-tab active" onclick="showPage('tasks',this)">tasks</button>
+      <button class="mobile-tab" onclick="showPage('insights',this)">insights</button>
+      <button class="mobile-tab" onclick="showPage('schema',this)">schema</button>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content">
+
+      <!-- CONFIG BANNER -->
+      <div class="config-banner" id="config-banner">
+        <div class="config-title">⚠ Firebase not configured</div>
+        <div class="config-sub">
+          Replace the <code>firebaseConfig</code> object at the bottom of this file with your project's config from
+          <strong>Firebase Console → Project Settings → Your Apps → SDK setup</strong>.
+          Until then, data is saved locally only.
+        </div>
+      </div>
+
+      <!-- TASKS PAGE -->
+      <div class="page active" id="page-tasks">
+        <div class="page-header">
+          <div class="page-title">// tasks</div>
+          <div class="page-sub" id="task-count-label">loading...</div>
+        </div>
+        <div class="filters" id="filter-chips">
+          <button class="chip active" onclick="setFilter('all',this)">all</button>
+          <button class="chip" onclick="setFilter('active',this)">active</button>
+          <button class="chip" onclick="setFilter('overdue',this)">overdue</button>
+          <button class="chip" onclick="setFilter('completed',this)">completed</button>
+          <button class="chip" onclick="setFilter('assignment',this)">assignments</button>
+          <button class="chip" onclick="setFilter('project',this)">projects</button>
+          <button class="chip" onclick="setFilter('study',this)">study</button>
+          <button class="chip" onclick="setFilter('research',this)">research</button>
+        </div>
+        <div class="task-list" id="task-list"></div>
+      </div>
+
+      <!-- INSIGHTS PAGE -->
+      <div class="page" id="page-insights">
+        <div class="page-header">
+          <div class="page-title">// insights</div>
+          <div class="page-sub">live analytics from your task data</div>
+        </div>
+        <div class="stats-grid" id="stats-grid"></div>
+        <div class="chart-card">
+          <div class="chart-title">COMPLETION RATE BY CATEGORY</div>
+          <div style="position:relative;height:200px"><canvas id="chart-cat"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">DEADLINE PRESSURE DISTRIBUTION (active tasks)</div>
+          <div style="position:relative;height:200px"><canvas id="chart-pressure"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">PROGRESS VELOCITY — avg %/day per active task</div>
+          <div id="velocity-chart"></div>
+        </div>
+      </div>
+
+      <!-- SCHEMA PAGE -->
+      <div class="page" id="page-schema">
+        <div class="page-header">
+          <div class="page-title">// data schema</div>
+          <div class="page-sub">ML-ready JSON structure for every task record</div>
+        </div>
+        <div class="schema-card">
+          <div class="chart-title">SAMPLE TASK OBJECT (live from your data)</div>
+          <div class="json-pre" id="json-preview"></div>
+        </div>
+        <div class="schema-card">
+          <div class="chart-title">FIELD REFERENCE</div>
+          <table class="schema-table">
+            <thead><tr><th>field</th><th>type</th><th>description</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>string</td><td>Unique Firestore document ID</td></tr>
+              <tr><td>name</td><td>string</td><td>Task title</td></tr>
+              <tr><td>category</td><td>enum</td><td>assignment | project | study | research</td></tr>
+              <tr><td>priority</td><td>enum</td><td>high | medium | low</td></tr>
+              <tr><td>deadline</td><td>ISO 8601</td><td>Due date/time string</td></tr>
+              <tr><td>created_at</td><td>ISO 8601</td><td>Task creation timestamp</td></tr>
+              <tr><td>completed_at</td><td>ISO 8601 | null</td><td>When task hit 100% or null</td></tr>
+              <tr><td>progress</td><td>integer 0–100</td><td>Current completion %</td></tr>
+              <tr><td>status</td><td>enum</td><td>Computed: active | completed | overdue</td></tr>
+              <tr><td>deadline_pressure</td><td>float 0–1</td><td>time_remaining / total_time. Lower = more urgent</td></tr>
+              <tr><td>velocity</td><td>float</td><td>Avg % progress gained per day since creation</td></tr>
+              <tr><td>days_to_deadline</td><td>float</td><td>Days until deadline (negative = overdue)</td></tr>
+              <tr><td>progress_log</td><td>object[]</td><td>Array of {ts, progress, note, delta} snapshots</td></tr>
+              <tr><td>tags</td><td>string[]</td><td>User-defined labels for filtering/ML features</td></tr>
+              <tr><td>description</td><td>string</td><td>Optional task notes / requirements</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="schema-card">
+          <div class="chart-title">PYTHON QUICKSTART</div>
+          <div class="json-pre">
+<span class="json-key">import</span> json, pandas <span class="json-key">as</span> pd, numpy <span class="json-key">as</span> np
+
+<span class="json-str"># Load your exported JSON</span>
+<span class="json-key">with</span> open(<span class="json-str">'tasks_export.json'</span>) <span class="json-key">as</span> f:
+    data = json.load(f)
+
+df = pd.json_normalize(data[<span class="json-str">'tasks'</span>])
+
+<span class="json-str"># Key columns for ML features</span>
+features = df[[
+    <span class="json-str">'category'</span>, <span class="json-str">'priority'</span>, <span class="json-str">'progress'</span>,
+    <span class="json-str">'deadline_pressure'</span>, <span class="json-str">'velocity'</span>,
+    <span class="json-str">'days_to_deadline'</span>, <span class="json-str">'status'</span>
+]]
+
+<span class="json-str"># Completion predictor example</span>
+<span class="json-key">from</span> sklearn.ensemble <span class="json-key">import</span> RandomForestClassifier
+df[<span class="json-str">'label'</span>] = (df[<span class="json-str">'status'</span>] == <span class="json-str">'completed'</span>).astype(int)
+<span class="json-str"># encode categoricals and fit...</span>
+          </div>
+        </div>
+        <button class="btn primary" style="width:100%;padding:12px;font-size:13px" onclick="exportJSON()">download full dataset as JSON ↓</button>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main-layout -->
+</div><!-- /app -->
+
+<!-- ADD TASK MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-title">// new task</div>
+    <div class="field"><label>task name *</label><input id="f-name" placeholder="e.g. OS Assignment 3 — Kernel Threads"/></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field"><label>category *</label>
+        <select id="f-cat">
+          <option value="assignment">Assignment / Coursework</option>
+          <option value="project">Personal Project</option>
+          <option value="study">Study / Revision</option>
+          <option value="research">Research / Reading</option>
+        </select>
+      </div>
+      <div class="field"><label>priority *</label>
+        <select id="f-pri"><option value="high">High</option><option value="medium" selected>Medium</option><option value="low">Low</option></select>
+      </div>
+    </div>
+    <div class="field"><label>deadline *</label><input id="f-deadline" type="datetime-local"/></div>
+    <div class="field"><label>description</label><textarea id="f-desc" placeholder="What does this task involve? Any requirements?"></textarea></div>
+    <div class="field"><label>tags (comma separated)</label><input id="f-tags" placeholder="e.g. DSA, semester-3, urgent"/></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">cancel</button>
+      <button class="btn primary" onclick="addTask()">create task</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+//  FIREBASE CONFIG
+//  Replace this block with YOUR project config
+//  from: Firebase Console → Project Settings → Your Apps
+// ══════════════════════════════════════════
+const firebaseConfig = {
+    apiKey: "AIzaSyBh73dV0fuXD0PLdep8GBwzOh515UonwKA",
+    authDomain: "progress-tracker-26ba3.firebaseapp.com",
+    projectId: "progress-tracker-26ba3",
+    storageBucket: "progress-tracker-26ba3.firebasestorage.app",
+    messagingSenderId: "800084603811",
+    appId: "1:800084603811:web:1122b5068ad5de01e22016",
+    measurementId: "G-43LBB4QM03"
+  };
+// ══════════════════════════════════════════
+
+const CAT = {
+  assignment: { label:'Assignment', color:'#4f8ef7', bg:'#1a2d52' },
+  project:    { label:'Project',    color:'#2dd4a0', bg:'#0d3328' },
+  study:      { label:'Study',      color:'#f5a623', bg:'#3d2a09' },
+  research:   { label:'Research',   color:'#a78bfa', bg:'#2d2050' },
+};
+const PRI = {
+  high:   { color:'#f06060', bg:'#3d1515' },
+  medium: { color:'#f5a623', bg:'#3d2a09' },
+  low:    { color:'#2dd4a0', bg:'#0d3328' },
+};
+
+let tasks = [];
+let db = null;
+let unsubscribe = null;
+let activeFilter = 'all';
+let isConfigured = false;
+
+// ── FIREBASE INIT ──
+function initFirebase() {
+  try {
+    const isPlaceholder = firebaseConfig.apiKey === 'AIzaSyBh73dV0fuXD0PLdep8GBwzOh515UonwKA';
+    if (isPlaceholder) {
+      document.getElementById('config-banner').classList.add('show');
+      document.getElementById('loading-sub').textContent = 'running in local mode...';
+      setTimeout(finishLoading, 1000);
+      loadLocal();
+      return;
+    }
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    document.getElementById('loading-sub').textContent = 'syncing tasks...';
+    isConfigured = true;
+    startListener();
+  } catch(e) {
+    console.error(e);
+    document.getElementById('config-banner').classList.add('show');
+    loadLocal();
+    finishLoading();
+  }
+}
+
+function startListener() {
+  if (unsubscribe) unsubscribe();
+  unsubscribe = db.collection('tasks').orderBy('created_at', 'desc').onSnapshot(snap => {
+    tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    saveLocal();
+    renderTasks();
+    updateSidebar();
+    setSyncStatus(true);
+    finishLoading();
+  }, err => {
+    console.error(err);
+    setSyncStatus(false);
+    loadLocal();
+    finishLoading();
+  });
+}
+
+function setSyncStatus(online) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  dot.style.background = online ? 'var(--green)' : 'var(--red)';
+  lbl.style.color = online ? 'var(--green)' : 'var(--red)';
+  lbl.textContent = online ? 'synced' : 'offline';
+}
+
+function finishLoading() {
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'grid';
+  renderTasks();
+  updateSidebar();
+}
+
+// ── LOCAL FALLBACK ──
+function saveLocal() { try { localStorage.setItem('tt_tasks', JSON.stringify(tasks)); } catch(e){} }
+function loadLocal() {
+  try { tasks = JSON.parse(localStorage.getItem('tt_tasks') || '[]'); } catch(e){ tasks = []; }
+  if (!tasks.length) seedDemo();
+  renderTasks();
+  updateSidebar();
+}
+function seedDemo() {
+  const now = new Date();
+  const dl1 = new Date(now); dl1.setDate(dl1.getDate() + 2);
+  const dl2 = new Date(now); dl2.setDate(dl2.getDate() + 5);
+  const dl3 = new Date(now); dl3.setDate(dl3.getDate() - 1);
+  tasks = [
+    { id:'demo1', name:'Data Structures Assignment 2', category:'assignment', priority:'high', deadline:dl1.toISOString(), created_at:new Date(now-2*86400000).toISOString(), completed_at:null, progress:45, description:'Implement AVL trees with rotations', tags:['DSA','algorithms'], progress_log:[{ts:new Date(now-2*86400000).toISOString(),progress:0,note:'Created',delta:0},{ts:new Date(now-86400000).toISOString(),progress:25,note:'Insert done',delta:25},{ts:now.toISOString(),progress:45,note:'Rotations working',delta:20}] },
+    { id:'demo2', name:'OS Kernel Module Project', category:'project', priority:'medium', deadline:dl2.toISOString(), created_at:new Date(now-5*86400000).toISOString(), completed_at:null, progress:20, description:'Build a character device driver in C', tags:['OS','C','linux'], progress_log:[{ts:new Date(now-5*86400000).toISOString(),progress:0,note:'Created',delta:0},{ts:new Date(now-2*86400000).toISOString(),progress:20,note:'ioctl working',delta:20}] },
+    { id:'demo3', name:'Networks Mid-Sem Revision', category:'study', priority:'high', deadline:dl3.toISOString(), created_at:new Date(now-7*86400000).toISOString(), completed_at:now.toISOString(), progress:100, description:'TCP/IP, routing, subnetting', tags:['networks','exam'], progress_log:[{ts:new Date(now-7*86400000).toISOString(),progress:0,note:'Created',delta:0},{ts:now.toISOString(),progress:100,note:'Done!',delta:100}] },
+  ];
+}
+
+// ── COMPUTED FIELDS ──
+function getStatus(t) {
+  if (t.progress >= 100) return 'completed';
+  if (new Date(t.deadline) < new Date()) return 'overdue';
+  return 'active';
+}
+function getDeadlinePressure(t) {
+  const created = new Date(t.created_at).getTime();
+  const deadline = new Date(t.deadline).getTime();
+  const total = deadline - created;
+  if (total <= 0) return 0;
+  return Math.max(0, Math.min(1, (deadline - Date.now()) / total));
+}
+function getVelocity(t) {
+  const days = (Date.now() - new Date(t.created_at).getTime()) / 86400000;
+  return days < 0.01 ? 0 : Math.round(t.progress / days * 10) / 10;
+}
+function getDaysToDeadline(t) {
+  return Math.round((new Date(t.deadline) - Date.now()) / 86400000 * 10) / 10;
+}
+function enrichTask(t) {
+  return { ...t, status: getStatus(t), deadline_pressure: Math.round(getDeadlinePressure(t)*1000)/1000, velocity: getVelocity(t), days_to_deadline: getDaysToDeadline(t) };
+}
+function deadlineChip(t) {
+  if (t.progress >= 100) return { text:'done', cls:'dl-done' };
+  const ms = new Date(t.deadline) - Date.now();
+  if (ms < 0) return { text:'overdue', cls:'dl-over' };
+  const h = Math.floor(ms / 3600000);
+  if (h < 24) return { text: h+'h left', cls:'dl-crit' };
+  const d = Math.floor(h / 24);
+  return { text: d+'d left', cls: d <= 2 ? 'dl-warn' : 'dl-ok' };
+}
+
+// ── RENDER TASKS ──
+function renderTasks() {
+  const el = document.getElementById('task-list');
+  let filtered = tasks.filter(t => {
+    const s = getStatus(t);
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'active') return s === 'active';
+    if (activeFilter === 'overdue') return s === 'overdue';
+    if (activeFilter === 'completed') return s === 'completed';
+    return t.category === activeFilter;
+  });
+  const label = document.getElementById('task-count-label');
+  label.textContent = filtered.length + ' task' + (filtered.length !== 1 ? 's' : '') + (activeFilter !== 'all' ? ' · ' + activeFilter : '');
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">◎</div><div class="empty-title">no tasks here</div><div class="empty-sub">add one with the + task button</div></div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(t => taskCardHTML(t)).join('');
+  updateSidebar();
+}
+
+function taskCardHTML(t) {
+  const s = getStatus(t);
+  const c = CAT[t.category];
+  const p = PRI[t.priority];
+  const dl = deadlineChip(t);
+  const logs = t.progress_log || [];
+  return `<div class="task-card ${s}" id="card-${t.id}">
+    <div class="task-header" onclick="toggleCard('${t.id}')">
+      <div class="cat-stripe" style="background:${c.color}"></div>
+      <div class="task-info">
+        <div class="task-name ${s==='completed'?'struck':''}">${escHtml(t.name)}</div>
+        <div class="task-meta">
+          <span class="tag" style="background:${c.bg};color:${c.color}">${c.label}</span>
+          <span class="tag" style="background:${p.bg};color:${p.color}">${t.priority}</span>
+          <span class="dl-chip ${dl.cls}">${dl.text}</span>
+          ${t.tags&&t.tags.length?t.tags.slice(0,2).map(tg=>`<span class="hashtag">#${escHtml(tg)}</span>`).join(''):''}
+        </div>
+      </div>
+      <div class="prog-mini"><div class="prog-mini-fill" style="width:${t.progress}%;background:${c.color}"></div></div>
+      <div class="prog-pct">${t.progress}%</div>
+      <div class="expand-arrow" id="arrow-${t.id}">▾</div>
+    </div>
+    <div class="task-body" id="body-${t.id}">
+      <div class="metrics-row">
+        <div class="metric">velocity <span>${getVelocity(t)}%/day</span></div>
+        <div class="metric">pressure <span>${Math.round(getDeadlinePressure(t)*100)}% left</span></div>
+        <div class="metric">logs <span>${logs.length}</span></div>
+        <div class="metric">deadline <span>${new Date(t.deadline).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span></div>
+      </div>
+      ${t.description ? `<div class="desc-text">${escHtml(t.description)}</div>` : ''}
+      ${t.tags&&t.tags.length ? `<div class="tags-row">${t.tags.map(tg=>`<span class="hashtag">#${escHtml(tg)}</span>`).join('')}</div>` : ''}
+      <div class="slider-row">
+        <span class="slider-label" id="slbl-${t.id}">${t.progress}%</span>
+        <input type="range" min="0" max="100" step="1" value="${t.progress}"
+          style="background:linear-gradient(to right,${c.color} ${t.progress}%,var(--bg3) ${t.progress}%)"
+          oninput="onSlider('${t.id}',this.value,this,'${c.color}')"
+          onchange="saveProgress('${t.id}')"/>
+      </div>
+      <div class="log-section">
+        <div class="log-head">progress log</div>
+        <div class="log-scroll" id="logscroll-${t.id}">
+          ${logs.length ? logs.slice().reverse().map(l => `
+            <div class="log-row">
+              <span class="log-ts">${new Date(l.ts).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+              <span class="log-pct">${l.progress}%</span>
+              <span class="log-delta" style="color:${l.delta>0?'var(--green)':l.delta<0?'var(--red)':'var(--text3)'}">${l.delta>0?'+':''}${l.delta||0}%</span>
+              <span class="log-note">${escHtml(l.note||'—')}</span>
+            </div>`).join('')
+          : '<div class="log-row"><span class="log-note">no entries yet</span></div>'}
+        </div>
+        <div class="note-input-row">
+          <input id="note-${t.id}" placeholder="add a note and log current progress..." maxlength="120" onkeydown="if(event.key==='Enter')logNote('${t.id}')"/>
+          <button class="btn sm" onclick="logNote('${t.id}')">log</button>
+        </div>
+      </div>
+      <div class="action-row">
+        ${s !== 'completed' ? `<button class="btn sm" onclick="markDone('${t.id}')">mark complete</button>` : ''}
+        <button class="btn sm danger" onclick="deleteTask('${t.id}')">delete</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function onSlider(id, val, el, color) {
+  document.getElementById('slbl-'+id).textContent = val+'%';
+  el.style.background = `linear-gradient(to right,${color} ${val}%,var(--bg3) ${val}%)`;
+  // update mini bar live
+  const mini = document.querySelector(`#card-${id} .prog-mini-fill`);
+  const pct = document.querySelector(`#card-${id} .prog-pct`);
+  if (mini) mini.style.width = val+'%';
+  if (pct) pct.textContent = val+'%';
+}
+
+function saveProgress(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  const slider = document.querySelector(`#body-${id} input[type=range]`);
+  if (!slider) return;
+  const newVal = parseInt(slider.value);
+  const prev = t.progress;
+  if (newVal === prev) return;
+  const delta = newVal - prev;
+  t.progress = newVal;
+  if (newVal >= 100) t.completed_at = new Date().toISOString();
+  else t.completed_at = null;
+  const logEntry = { ts: new Date().toISOString(), progress: newVal, note: '', delta };
+  if (!t.progress_log) t.progress_log = [];
+  t.progress_log.push(logEntry);
+  persistTask(t);
+  toast('progress updated', 'success');
+}
+
+function logNote(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  const inp = document.getElementById('note-'+id);
+  const note = inp ? inp.value.trim() : '';
+  const prev = t.progress_log && t.progress_log.length ? t.progress_log[t.progress_log.length-1].progress : 0;
+  const entry = { ts: new Date().toISOString(), progress: t.progress, note, delta: t.progress - prev };
+  if (!t.progress_log) t.progress_log = [];
+  t.progress_log.push(entry);
+  if (inp) inp.value = '';
+  persistTask(t);
+  renderTasks();
+  toast('log entry saved', 'success');
+}
+
+function markDone(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  const prev = t.progress;
+  t.progress = 100;
+  t.completed_at = new Date().toISOString();
+  if (!t.progress_log) t.progress_log = [];
+  t.progress_log.push({ ts: new Date().toISOString(), progress: 100, note: 'Marked complete', delta: 100 - prev });
+  persistTask(t);
+  renderTasks();
+  toast('task completed! ✓', 'success');
+}
+
+function deleteTask(id) {
+  if (!confirm('Delete this task and all its log data?')) return;
+  tasks = tasks.filter(t => t.id !== id);
+  if (db) db.collection('tasks').doc(id).delete().catch(console.error);
+  saveLocal();
+  renderTasks();
+  toast('task deleted');
+}
+
+function persistTask(t) {
+  const idx = tasks.findIndex(x => x.id === t.id);
+  if (idx !== -1) tasks[idx] = t;
+  saveLocal();
+  if (db) {
+    const { id, ...data } = t;
+    db.collection('tasks').doc(id).set(data).catch(console.error);
+  }
+}
+
+// ── ADD TASK ──
+function openModal() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById('f-deadline').value = now.toISOString().slice(0,16);
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('f-name').focus(), 100);
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+
+function addTask() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { toast('task name required', 'error'); return; }
+  const dl = document.getElementById('f-deadline').value;
+  if (!dl) { toast('deadline required', 'error'); return; }
+  const tags = document.getElementById('f-tags').value.split(',').map(s => s.trim()).filter(Boolean);
+  const id = 'T' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2,5).toUpperCase();
+  const t = {
+    id, name,
+    category: document.getElementById('f-cat').value,
+    priority: document.getElementById('f-pri').value,
+    deadline: new Date(dl).toISOString(),
+    created_at: new Date().toISOString(),
+    completed_at: null,
+    progress: 0,
+    description: document.getElementById('f-desc').value.trim(),
+    tags,
+    progress_log: [{ ts: new Date().toISOString(), progress: 0, note: 'Task created', delta: 0 }]
+  };
+  tasks.unshift(t);
+  if (db) {
+    const { id: _id, ...data } = t;
+    db.collection('tasks').doc(id).set(data).catch(console.error);
+  }
+  saveLocal();
+  closeModal();
+  renderTasks();
+  ['f-name','f-desc','f-tags'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  toast('task created!', 'success');
+}
+
+// ── FILTERS ──
+function setFilter(f, chipEl) {
+  activeFilter = f;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  if (chipEl) chipEl.classList.add('active');
+  renderTasks();
+}
+function highlightNav(el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ── TOGGLE CARD ──
+function toggleCard(id) {
+  const body = document.getElementById('body-'+id);
+  const arrow = document.getElementById('arrow-'+id);
+  body.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('open');
+}
+
+// ── INSIGHTS ──
+function renderInsights() {
+  const all = tasks.map(enrichTask);
+  const done = all.filter(t => t.status === 'completed').length;
+  const overdue = all.filter(t => t.status === 'overdue').length;
+  const active = all.filter(t => t.status === 'active').length;
+  const avgProg = all.length ? Math.round(all.reduce((s,t) => s+t.progress, 0) / all.length) : 0;
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-val">${all.length}</div><div class="stat-lbl">total tasks</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:var(--green)">${done}</div><div class="stat-lbl">completed</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:${overdue?'var(--red)':'var(--text)'}">${overdue}</div><div class="stat-lbl">overdue</div></div>
+    <div class="stat-card"><div class="stat-val">${avgProg}%</div><div class="stat-lbl">avg progress</div></div>`;
+
+  const cats = ['assignment','project','study','research'];
+  const catRates = cats.map(cat => { const ct = all.filter(t=>t.category===cat); return ct.length ? Math.round(ct.filter(t=>t.status==='completed').length/ct.length*100) : 0; });
+  if (window._cChart) window._cChart.destroy();
+  window._cChart = new Chart(document.getElementById('chart-cat'), {
+    type:'bar',
+    data:{ labels:cats.map(c=>CAT[c].label), datasets:[{ data:catRates, backgroundColor:cats.map(c=>CAT[c].color), borderRadius:5, borderSkipped:false }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ min:0, max:100, ticks:{ callback:v=>v+'%', color:'#555a75', font:{size:10} }, grid:{ color:'rgba(255,255,255,0.04)' } }, x:{ ticks:{ color:'#8b90a8', font:{size:11} }, grid:{ display:false } } } }
+  });
+
+  const pressureBuckets = ['critical\n<10%','high\n10–30%','medium\n30–60%','low\n60%+'];
+  const pb = all.filter(t=>t.status==='active').reduce((acc,t) => { const p=t.deadline_pressure; if(p<0.1)acc[0]++;else if(p<0.3)acc[1]++;else if(p<0.6)acc[2]++;else acc[3]++; return acc; }, [0,0,0,0]);
+  if (window._pChart) window._pChart.destroy();
+  window._pChart = new Chart(document.getElementById('chart-pressure'), {
+    type:'doughnut',
+    data:{ labels:pressureBuckets, datasets:[{ data:pb, backgroundColor:['#f06060','#f5a623','#4f8ef7','#2dd4a0'], borderWidth:2, borderColor:'#141720' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'right', labels:{ color:'#8b90a8', font:{size:11}, boxWidth:12, padding:12 } } } }
+  });
+
+  const velEl = document.getElementById('velocity-chart');
+  const activeTasks = all.filter(t => t.status !== 'completed');
+  if (!activeTasks.length) { velEl.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:.5rem 0">no active tasks</div>'; return; }
+  const maxV = Math.max(...activeTasks.map(t => t.velocity), 1);
+  velEl.innerHTML = activeTasks.map(t => `
+    <div class="vel-row">
+      <div class="vel-name">${escHtml(t.name)}</div>
+      <div class="vel-track"><div class="vel-fill" style="width:${Math.round(t.velocity/maxV*100)}%;background:${CAT[t.category].color}"></div></div>
+      <div class="vel-val">${t.velocity}%/d</div>
+    </div>`).join('');
+}
+
+// ── SCHEMA ──
+function renderSchema() {
+  const sample = tasks.length ? enrichTask(tasks[0]) : { id:'DEMO', name:'Example Task', category:'assignment', priority:'high', deadline: new Date(Date.now()+86400000*3).toISOString(), created_at: new Date().toISOString(), completed_at: null, progress:45, status:'active', deadline_pressure:0.62, velocity:7.5, days_to_deadline:3, description:'...', tags:['demo'], progress_log:[{ ts:new Date().toISOString(), progress:45, note:'In progress', delta:20 }] };
+  document.getElementById('json-preview').textContent = JSON.stringify(sample, null, 2);
+}
+
+// ── EXPORT ──
+function exportJSON() {
+  const data = { exported_at: new Date().toISOString(), version: '1.0', schema: 'task-tracker-cs', task_count: tasks.length, tasks: tasks.map(enrichTask) };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'tasks_' + new Date().toISOString().slice(0,10) + '.json'; a.click();
+  toast('JSON exported!', 'success');
+}
+
+// ── NAV ──
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  // highlight tabs
+  document.querySelectorAll('.nav-item').forEach(n => { if(n.textContent.trim()===name) n.classList.add('active'); });
+  document.querySelectorAll('.mobile-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (name === 'insights') renderInsights();
+  if (name === 'schema') renderSchema();
+}
+
+// ── SIDEBAR STATS ──
+function updateSidebar() {
+  document.getElementById('sb-total').textContent = tasks.length;
+  document.getElementById('sb-active').textContent = tasks.filter(t=>getStatus(t)==='active').length;
+  document.getElementById('sb-overdue').textContent = tasks.filter(t=>getStatus(t)==='overdue').length;
+}
+
+// ── CLOCK ──
+function tick() {
+  document.getElementById('clock').textContent = new Date().toLocaleString('en-IN',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(tick, 1000); tick();
+
+// ── TOAST ──
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast' + (type ? ' '+type : '');
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── UTILS ──
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── KEYBOARD ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openModal(); }
+});
+
+// ── START ──
+initFirebase();
+</script>
+</body>
+</html>
